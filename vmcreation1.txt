@@ -1,0 +1,113 @@
+$VMName = "myvmps"
+$VMSize = 'Standard_A3'
+$ResourceGroupName = "Test12"
+$StorageName = "sa05ps"
+$Location = "West US"
+$StorageType = "Standard_LRS"
+$OSPublisherName = "MicrosoftWindowsServer"
+$windows = $true
+$vmagent = $true
+$autoupdate = $true
+$OSSKu = "2012-R2-Datacenter"
+$createoption = "FromImage"
+$OSOffer = "WindowsServer"
+$computername = "MainComputer"
+$OSVersion = "Latest"
+$OSDiskName = "Disk6"
+$Dsize = "128"
+$disktype = "Premium SSD"
+$subnet = "subnet6"
+$VNetName = "myVNet6"
+$PublicIPName = "vm6ip"
+$rule1 = "rdp-rule"
+$rule2 = "web-rule"
+$nsgname = "NSG6"
+$InterfaceName = "NIC6"
+
+$username='demouser'
+$password='Password@123'
+
+
+
+# Create storage account
+
+
+Write-Host "Creating storage account: $StorageName..."
+$StorageAccount = New-AZStorageAccount -ResourceGroupName $ResourceGroupName -Name $StorageName -SkuName $StorageType -Location $Location
+
+
+$
+
+nsgrule1 = New-AzNetworkSecurityRuleConfig -Name $rule1  -Description "Allow RDP" -Access Allow -Protocol Tcp -Direction Inbound -Priority 100 -SourceAddressPrefix Internet -SourcePortRange * -DestinationAddressPrefix * -DestinationPortRange 3389
+
+$nsgrule2 = New-AzNetworkSecurityRuleConfig -Name $rule2 -Description "Allow HTTP" -Access Allow -Protocol Tcp -Direction Inbound -Priority 101 -SourceAddressPrefix Internet -SourcePortRange * -DestinationAddressPrefix * -DestinationPortRange 80
+
+$nsg = @{
+	  Name = $nsgname
+	  ResourceGroupName = $ResourceGroupName
+	  Location = $Location
+	  SecurityRules = $nsgrule1,$nsgrule2
+	  
+	}
+$NewNSG = New-AZNetworkSecurityGroup @nsg
+
+
+
+# Create a Public IP
+
+Write-Host "Creating a Public IP: $PublicIPName..."
+$publicIP = New-AZPublicIpAddress -Name $PublicIPName -ResourceGroupName $ResourceGroupName -Location $Location -AllocationMethod Dynamic
+
+
+
+# Create the VNet
+
+Write-Host "Creating a VNet: $VNetName..."
+$subnetConfig = New-AZVirtualNetworkSubnetConfig -Name "default" -AddressPrefix "192.168.1.0/24"
+
+
+$VNet = New-AZVirtualNetwork -ResourceGroupName $ResourceGroupName -Name $VNetName -AddressPrefix "192.168.0.0/16" -Location $Location -Subnet $subnetConfig
+
+
+$myNIC = New-AZNetworkInterface -Name $InterfaceName -ResourceGroupName $ResourceGroupName -Location $Location -SubnetId $VNet.Subnets[0].Id -PublicIpAddressId $publicip.Id -NetworkSecurityGroupId $NewNSG.id 
+
+
+
+# Create the VM Credentials
+
+Write-Host "Creating VM Credentials..."
+$secureStringPwd = $password | ConvertTo-SecureString -AsPlainText -Force
+
+
+$Credential = New-Object System.Management.Automation.PSCredential -ArgumentList $username, $secureStringPwd
+
+
+
+# Create the basic VM config
+ 
+Write-Host "Creating the basic VM config..."
+$VirtualMachine = New-AZVMConfig -VMName $VMName -VMSize $VMSize
+
+
+$VirtualMachine = Set-AZVMOperatingSystem -VM $VirtualMachine -ComputerName $VMName -Windows -Credential $Credential
+
+$VirtualMachine = Add-AZVMNetworkInterface -VM $VirtualMachine -Id $myNIC.Id
+
+
+
+# Create OS Disk Uri and attach it to the VM
+
+Write-Host "Creating the OSDisk '$OSDiskName' for the VM..."
+$NewOSDiskVhdUri = $StorageAccount.PrimaryEndpoints.Blob.ToString() + "vhds/" + $vmName.ToLower() + "-" + $osDiskName + '.vhd'
+
+$VirtualMachine = Set-AZVMSourceImage -VM $VirtualMachine -PublisherName $OSPublisherName -Offer $OSOffer -Skus $OSSKu -Version $OSVersion
+
+
+$VirtualMachine = Set-AZVMOSDisk -VM $VirtualMachine -Name $osDiskName -VhdUri $NewOSDiskVhdUri -CreateOption FromImage
+
+
+
+# Create the VM
+
+Write-Host "Building the VM: $VMName..."
+New-AZVM -ResourceGroupName $ResourceGroupName -Location $Location -VM $VirtualMachine

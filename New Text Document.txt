@@ -1,0 +1,73 @@
+$vmname = "Testvm2"
+$vmsize = 'Standard_A3'
+$Groupname = "T1pep"
+$SAName = "sa1pep"
+$location = "West US"
+$skuname = "Standard_LRS"
+$OSPublisherName = "MicrosoftWindowsServer"
+$windows = $true
+$vmagent = $true
+$autoupdate = $true
+$skus = "2012-R2-Datacenter"
+$createoption = "FromImage"
+$OSOffer = "WindowsServer"
+$computername = "MainComputer"
+$OSVersion = "Latest"
+$osDiskname = "Disk6"
+$Dsize = "128"
+$OSSKU = "Standard SSD"
+$subnet = "snpep"
+$VNet = "pepVN"
+$pipname = "pepip1"
+$rule1 = "rdp-rule"
+$rule2 = "web-rule"
+$nsgname = "NSGpep1"
+$nicName = "NICpep1"
+$UserName='demouser'
+$password= 'password@123456'
+
+
+
+
+Write-Host "Creating Resource Group" 
+$ResourceGroup =  New-AZResourceGroup -ResourceGroupName $Groupname -Location $Location
+
+Write-Host "Creating Storage Account"
+$StorageAccount = New-AzStorageAccount -ResourceGroupName $Groupname -Location $Location -Name $SAName -Skuname $skuname
+
+Write-Host "Creating Subnet"
+$subnetConfig = New-AzVirtualNetworkSubnetConfig -Name $subnet -AddressPrefix 10.0.0.0/24
+
+  
+Write-Host "Creating Virtual Network"
+$virtualnetwork = New-AzVirtualNetwork -ResourceGroupName $Groupname -Location $Location -Name $VNet -AddressPrefix "10.0.0.0/16" -Subnet $subnetconfig
+$PrivateEndpoint= New-AzPrivateEndpoint -Name "MyPrivateEndpoint" -ResourceGroupName $Groupname -Location $Location -Subnet $virtualnetwork.subnets[0] -PrivateLinkServiceConnection "testpvt"
+
+Write-Host "Creating Public IP" 
+$PublicIP = New-AzPublicIPAddress -ResourceGroupName $Groupname -Location $Location -Name $pipname -AllocationMethod "Dynamic"
+
+$nsgrule1 = New-AzNetworkSecurityRuleConfig -Name $rule1  -Description "Allow RDP" -Access Allow -Protocol Tcp -Direction Inbound -Priority 100 -SourceAddressPrefix Internet -SourcePortRange * -DestinationAddressPrefix * -DestinationPortRange 3389
+
+$nsgrule2 = New-AzNetworkSecurityRuleConfig -Name $rule2 -Description "Allow HTTP" -Access Allow -Protocol Tcp -Direction Inbound -Priority 101 -SourceAddressPrefix Internet -SourcePortRange * -DestinationAddressPrefix * -DestinationPortRange 80
+
+
+Write-Host "Creating Security Group"
+$NewNSG = New-AZNetworkSecurityGroup -ResourceGroupName $Groupname -Location $Location -Name $nsgname -SecurityRules $nsgrule1,$nsgrule2
+
+Write-Host "Creating Network Interface"
+$Mynic = New-AzNetworkInterface -Name $nicName -ResourceGroupName $Groupname -Location $Location -SubnetId $virtualnetwork.Subnets[0].Id -NetworkSecurityGroupId $NewNSG.Id -PublicIpAddressId $PublicIP.Id
+
+$SecureStringPswd = $password | ConvertTo-SecureString -AsPlainText -Force
+$Credential = New-Object System.Management.Automation.PSCredential -ArgumentList $UserName, $SecureStringPswd
+
+$VirtualMachine = New-AzVMConfig -VMName $vmname -VMSize $vmsize
+
+Write-Host "Creating Disk"
+$VirtualMachine = Set-AzVMOperatingSystem -VM $VirtualMachine -Windows -Computername $Vmname -Credentials $Credential
+
+$VirtualMachine = Set-AzVMOSDisk -VM $VirtualMachine -Name $osDiskname -CreateOption FromImage | Set-AzVMBootDiagnostic $StorageAccount.PrimaryEndpoints.Blob.ToString() + "vhds/" + $vmName.ToLower() + "-" + $osDiskName + '.vhd'| Add-AzVMNetworkInterface -Id $Mynic.Id
+
+$VirtualMachine = Set-AZVMSourceImage -VM $VirtualMachine -PublisherName $OSPublisherName -Offer $OSOffer -Skus $OSSKu -Version $OSVersion
+
+Write-Host "Creating VM $vmname" 
+New-AZVM -ResourceGroupName $Groupname -Location $Location -VM $VirtualMachine
