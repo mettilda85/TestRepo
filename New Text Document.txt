@@ -26,9 +26,6 @@ $nicName = "NICpep1"
 $UserName='demouser'
 $password= 'password@123456'
 
-
-
-
 Write-Host "Creating Resource Group" 
 $ResourceGroup =  New-AZResourceGroup -ResourceGroupName $Groupname -Location $Location
 
